@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>校园 RFID 取件系统</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%F0%9F%93%A6%3C/text%3E%3C/svg%3E" />
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --ink: #1f2330;
+      --ink-2: #5a6273;
+      --line: #e6e8ef;
+      --brand: #4f6cff;
+      --brand-2: #6f87ff;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+      --pending: #f59e0b;
+      --picked: #16a34a;
+      --shadow: 0 6px 24px rgba(20, 30, 60, 0.06);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    #app { height: 100%; }
+    .layout { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+    .sidebar {
+      background: #111936;
+      color: #c9d1ee;
+      padding: 24px 16px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 18px; font-weight: 700; color: #fff;
+      margin-bottom: 20px;
+    }
+    .brand .logo {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, #4f6cff, #6f87ff);
+      display: flex; align-items: center; justify-content: center; font-size: 20px;
+    }
+    .nav-item {
+      padding: 11px 14px; border-radius: 10px; cursor: pointer;
+      color: #c9d1ee; font-size: 14px; display: flex; align-items: center; gap: 8px;
+      transition: background .15s;
+    }
+    .nav-item:hover { background: rgba(255,255,255,0.06); color: #fff; }
+    .nav-item.active { background: rgba(79,108,255,0.25); color: #fff; }
+    .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: #6f87ff; }
+    .reader-status {
+      margin-top: auto;
+      padding: 12px; border-radius: 10px;
+      background: rgba(255,255,255,0.04);
+      font-size: 12px;
+    }
+    .reader-status .row { display: flex; justify-content: space-between; padding: 3px 0; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 999px; font-size: 11px; }
+    .pill.ok    { background: rgba(34,197,94,0.18);  color: #4ade80; }
+    .pill.err   { background: rgba(239,68,68,0.18);  color: #fca5a5; }
+    .pill.warn  { background: rgba(245,158,11,0.18); color: #fbbf24; }
+    .pill.idle  { background: rgba(120,130,160,0.2); color: #cbd5e1; }
+
+    .main { overflow-y: auto; padding: 28px 36px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+    .topbar h1 { font-size: 22px; font-weight: 700; margin: 0; }
+    .topbar .sub { color: var(--ink-2); font-size: 13px; }
+
+    .card {
+      background: var(--card); border-radius: 16px; padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+
+    .stat { padding: 18px; }
+    .stat .label { color: var(--ink-2); font-size: 13px; }
+    .stat .value { font-size: 30px; font-weight: 700; margin-top: 6px; }
+
+    /* Pickup 大屏 */
+    .pickup-screen { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+    .pickup-screen.idle .hint { color: var(--ink-2); font-size: 18px; }
+    .pickup-screen.idle .big  { color: #9aa3b8; font-size: 88px; font-weight: 800; margin: 12px 0; letter-spacing: 4px;}
+    .pickup-screen.show .who { font-size: 38px; font-weight: 800; color: var(--ink); }
+    .pickup-screen.show .who .name { color: var(--brand); }
+    .pickup-screen .codes { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin: 18px 0 8px; }
+    .pickup-screen .code {
+      font-size: 38px; font-weight: 800; color: #fff;
+      background: linear-gradient(135deg, #4f6cff, #6f87ff);
+      padding: 14px 28px; border-radius: 14px; letter-spacing: 2px;
+      box-shadow: 0 8px 24px rgba(79,108,255,0.3);
+    }
+    .pickup-screen .cooldown {
+      margin-top: 16px; padding: 10px 18px; border-radius: 999px;
+      background: rgba(245,158,11,0.12); color: #b45309; font-size: 14px;
+      display: inline-flex; align-items: center; gap: 8px;
+    }
+    .pickup-screen .progress {
+      width: 240px; height: 6px; background: #fef3c7; border-radius: 3px; overflow: hidden; margin-left: 8px;
+    }
+    .pickup-screen .progress > div {
+      height: 100%; background: #f59e0b; transition: width .1s linear;
+    }
+    .pickup-screen.checkout { color: #166534; }
+    .pickup-screen.checkout .big { font-size: 64px; font-weight: 800; }
+    .pickup-screen.unknown .big { color: var(--err); font-size: 56px; font-weight: 800; }
+    .pickup-screen.unknown .hint { color: var(--ink-2); margin-top: 8px; }
+    .pickup-screen .epc {
+      margin-top: 22px; font-size: 12px; color: var(--ink-2);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 11px 12px; text-align: left; border-bottom: 1px solid var(--line); }
+    th { color: var(--ink-2); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    tr:hover td { background: #fafbff; }
+
+    /* Forms */
+    .form-row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 14px; }
+    .field { display: flex; flex-direction: column; gap: 4px; min-width: 180px; flex: 1; }
+    .field label { font-size: 12px; color: var(--ink-2); }
+    .field input, .field select {
+      border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px;
+      font-size: 14px; outline: none; transition: border-color .15s;
+    }
+    .field input:focus, .field select:focus { border-color: var(--brand); }
+    .btn {
+      padding: 9px 16px; border-radius: 10px; border: 0; cursor: pointer;
+      font-size: 14px; font-weight: 600; transition: transform .05s, opacity .15s;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: var(--brand-2); }
+    .btn-ghost { background: #eef0fb; color: var(--ink); }
+    .btn-ghost:hover { background: #e2e6f6; }
+    .btn-danger { background: #fee2e2; color: #b91c1c; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+    .badge {
+      display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    }
+    .badge.pending { background: #fef3c7; color: #92400e; }
+    .badge.picked  { background: #dcfce7; color: #166534; }
+
+    .empty { padding: 40px; text-align: center; color: var(--ink-2); }
+
+    /* 新卡绑定面板 */
+    .bind-panel { margin-top: 18px; border: 2px solid var(--brand); }
+    .bind-head { display: flex; justify-content: space-between; align-items: flex-start; }
+    .bind-head code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: #eef0fb; padding: 2px 6px; border-radius: 6px; font-size: 12px;
+    }
+    .field select {
+      border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-size: 14px;
+    }
+
+    /* 上传区 */
+    .dropzone {
+      border: 2px dashed var(--line); border-radius: 14px; padding: 34px 20px;
+      text-align: center; transition: border-color .15s, background .15s;
+    }
+    .dropzone.drag { border-color: var(--brand); background: rgba(79,108,255,0.05); }
+    .dropzone .btn { cursor: pointer; }
+
+    .flash {
+      position: fixed; right: 20px; top: 20px; z-index: 50;
+      padding: 12px 18px; border-radius: 12px; background: #111936; color: #fff;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+      animation: slideIn .25s ease-out;
+    }
+    @keyframes slideIn { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* 2026 · Campus collection experience */
+    :root { --bg: #f1f4f8; --ink: #182b46; --ink-2: #627188; --brand: #2467db; --brand-2: #3982ed; --line: #e1e8f0; --shadow: 0 8px 32px rgba(27,50,86,.05); }
+    body { font-size: 16px; }
+    .layout { grid-template-columns: 236px minmax(0,1fr); }
+    .sidebar { background: #101f36; padding: 32px 20px 22px; gap: 10px; }
+    .brand { gap: 12px; margin-bottom: 36px; font-size: 20px; }
+    .brand small { display: block; font-size: 10px; letter-spacing: 2px; color: #8da4c2; margin-top: 6px; font-weight: 500; }
+    .brand .logo { width: 42px; height: 44px; background: #244a78; border: 1px solid #3c638e; }
+    .nav-item { border: 0; background: transparent; width: 100%; text-align: left; padding: 15px 16px; font-size: 16px; font-family: inherit; border-radius: 12px; }
+    .nav-item.active { background: #2467db; box-shadow: 0 6px 18px #07183040; }
+    .nav-item .dot { background: #b9ddff; }
+    .reader-status { line-height: 1.7; font-size: 13px; border: 1px solid #2a3c53; padding: 14px 12px; }
+    .reader-status .row { gap: 8px; overflow-wrap: anywhere; }
+    .pill { font-size: 12px; }
+    .main { padding: 32px clamp(22px,3vw,52px); }
+    .topbar { gap: 20px; margin-bottom: 26px; }
+    .topbar h1 { font-size: 29px; letter-spacing: -.5px; margin-bottom: 8px; }
+    .topbar .sub { font-size: 15px; line-height: 1.7; }
+    .eyebrow { font-size: 11px; letter-spacing: 2.4px; color: #68809e; margin-bottom: 9px; font-weight: 650; }
+    .card { border: 1px solid var(--line); border-radius: 20px; padding: 25px; }
+    .pickup-toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+    .voice-hint { color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+    .voice-notice { color: #a45813; font-size: 15px; margin-bottom: 14px; }
+    .pickup-screen { position: relative; overflow: hidden; min-height: 66vh; padding: 62px 36px 40px; border: 1px solid #304f75; color: #eef6ff; background: radial-gradient(ellipse at 90% 0%, #284d74 0%, transparent 65%), #122840; box-shadow: 0 18px 45px #182d4920; }
+    .screen-topline { position: absolute; top: 23px; left: 28px; right: 28px; display: flex; justify-content: space-between; gap: 12px; color: #b1c8df; font-size: 14px; letter-spacing: 1px; }
+    .screen-topline span:first-child::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 100%; background: #62dfbd; margin-right: 10px; }
+    .scan-symbol { width: 90px; height: 90px; margin: 10px 0 4px; padding: 19px; border-radius: 26px; background: #ffffff0a; border: 1px solid #ffffff26; color: #96c9ff; }
+    .pickup-screen.idle .big { color: #fff; font-size: clamp(64px,6vw,100px); letter-spacing: 8px; line-height: 1.35; margin: 22px 0 12px; }
+    .pickup-screen.idle .hint, .pickup-screen .hint { color: #c1d5e8; font-size: clamp(22px,2vw,30px); line-height: 1.8; }
+    .idle-footnote { margin-top: 40px; color: #9db6d0; font-size: 18px; line-height: 1.8; }
+    .pickup-screen .who, .pickup-screen.show .who { font-size: clamp(32px,3.5vw,54px); font-weight: 700; color: #f3f8ff; line-height: 1.5; overflow-wrap: anywhere; }
+    .pickup-screen .who .name, .pickup-screen.show .who .name { color: #9dceff; }
+    .pickup-screen .phone { display: block; color: #b0c9e3; font-size: 20px; font-weight: 400; letter-spacing: 2px; }
+    .pickup-summary { color: #c7d9eb; font-size: clamp(26px,2.5vw,36px); margin-top: 18px; }
+    .pickup-summary b { color: #8fc9ff; font-size: 1.45em; padding: 0 9px; }
+    .pickup-screen .codes { width: 100%; gap: 18px; margin: 30px 0 12px; }
+    .pickup-screen .code { background: #f0f7ff; color: #12355e; font-size: clamp(36px,4.4vw,68px); padding: 18px 30px; letter-spacing: 2px; border: 1px solid #fff; box-shadow: 0 6px 16px #0002; overflow-wrap: anywhere; max-width: 100%; font-variant-numeric: tabular-nums; }
+    .pickup-screen .cooldown { display: flex; flex-direction: column; gap: 8px; width: min(100%,850px); padding: 20px 24px; border: 1px solid #4a6581; border-radius: 16px; background: #ffffff08; color: #e0ecf9; font-size: clamp(18px,1.6vw,24px); line-height: 1.65; }
+    .pickup-screen .cooldown strong { color: #9dceff; }
+    .pickup-screen .progress { width: min(100%,420px); margin: 8px 0 0; height: 5px; background: #ffffff19; }
+    .pickup-screen .progress > div { background: #85bdff; }
+    .pickup-screen .epc { font-size: 15px; color: #8eabc7; overflow-wrap: anywhere; }
+    .pickup-screen.checkout { background: radial-gradient(ellipse at top right,#215b56,transparent 70%),#112f35; color: #d2fae8; border-color: #34685f; }
+    .pickup-screen .big { font-size: clamp(44px,5vw,76px); font-weight: 750; line-height: 1.5; }
+    .pickup-screen.checkout .big { font-size: clamp(44px,5vw,76px); color: #b0f0d2; }
+    .pickup-screen .completion-note { margin-top: 18px; font-size: 26px; color: #b5d9cf; }
+    .service-strip { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 22px 6px; color: var(--ink-2); font-size: 16px; }
+    .service-strip .separator { color: #bac6d5; }
+    .field { gap: 8px; }
+    .field label { font-size: 14px; }
+    .field input, .field select { font-size: 16px; padding: 12px 14px; min-height: 46px; background: #fcfdff; color: var(--ink); }
+    .btn { min-height: 42px; font-size: 15px; padding: 11px 18px; }
+    .btn-sm { font-size: 14px; padding: 9px 14px; }
+    .btn-ghost { background: #e6edf6; }
+    .btn:disabled { cursor: not-allowed; opacity: .55; }
+    button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid #6ba5f5; outline-offset: 3px; }
+    table { font-size: 15px; }
+    th { font-size: 13px; background: #f7f9fc; }
+    td, th { padding: 15px 12px; }
+    .stat .label { font-size: 16px; }
+    .stat .value { font-size: 42px; }
+    .badge { font-size: 13px; }
+    .flash { background: #ecfdf5; color: #16634b; border: 1px solid #9ddbc6; font-size: 18px; padding: 17px 25px; max-width: calc(100vw - 40px); }
+    .flash.error { background: #fff3f1; color: #a8372d; border-color: #efb9b4; }
+    @media (min-width: 1800px) { .layout { grid-template-columns: 270px minmax(0,1fr); } .nav-item { font-size: 20px; } .pickup-screen { min-height: 72vh; } .pickup-screen .hint { font-size: 36px; } .pickup-screen .code { font-size: 84px; } }
+    @media (max-width: 1000px) { .layout { grid-template-columns: 190px minmax(0,1fr); } .sidebar { padding: 24px 12px; } .main { padding: 24px 20px; } .topbar { flex-wrap: wrap; } .grid-4 { grid-template-columns: repeat(2,minmax(0,1fr)); } .card:not(.pickup-screen) { overflow-x: auto; } }
+    @media (max-width: 680px) { .layout { display: block; height: auto; min-height: 100vh; } .sidebar { padding: 16px; flex-direction: row; flex-wrap: wrap; gap: 8px; } .brand { width: 100%; margin: 0 0 10px; } .nav-item { width: auto; padding: 10px; font-size: 14px; } .reader-status { width: 100%; margin-top: 8px; } .main { overflow: visible; padding: 22px 14px; } .pickup-screen { min-height: 550px; padding: 70px 18px 28px; } .screen-topline { font-size: 12px; left: 18px; right: 18px; } .pickup-screen .code { font-size: 36px; padding: 16px; } .pickup-screen .phone { font-size: 18px; } .idle-footnote { font-size: 16px; } .service-strip { font-size: 14px; gap: 10px; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="logo">📦</div>
+          <div>校园取件<small>CAMPUS · PICKUP</small></div>
+        </div>
+        <button type="button" v-for="t in tabs" :key="t.key" class="nav-item"
+             :class="{active: tab === t.key}" @click="tab = t.key">
+          <span class="dot" v-if="tab === t.key"></span>
+          <span>{{ t.label }}</span>
+        </button>
+        <div class="reader-status">
+          <div class="row"><span>读卡器</span>
+            <span class="pill" :class="readerPillClass">{{ readerStatusText }}</span>
+          </div>
+          <div class="row" v-if="readerStatus.port"><span>端口</span><span>{{ readerStatus.port }}</span></div>
+          <div class="row" v-if="readerStatus.baudrate"><span>波特率</span><span>{{ readerStatus.baudrate }}</span></div>
+          <div class="row" v-if="readerAlive === 'alive'"><span>心跳</span><span style="color:#86efac;">正常 {{ readerStatus.rx_age }}s 前</span></div>
+          <div class="row" v-else-if="readerAlive === 'dead'"><span>心跳</span><span style="color:#fca5a5;">{{ readerStatus.rx_age }}s 无回应</span></div>
+          <div class="row" v-if="readerStatus.error"><span>错误</span><span style="color:#fca5a5;">{{ readerStatus.error }}</span></div>
+          <div v-if="readerAlive === 'dead' || readerStatus.status === 'silent'" style="font-size:11px;color:#fca5a5;line-height:1.5;margin-top:6px;">
+            端口连上了但读写器不回应：重插 USB，或检查天线/供电。软件会自动重连。
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <!-- 取件大屏 -->
+        <section v-show="tab==='pickup'">
+          <div class="topbar">
+            <div>
+              <div class="eyebrow">CAMPUS SMART SERVICE</div>
+              <h1>取件大屏</h1>
+              <div class="sub">刷卡查看取件码，取完快递后再次刷卡确认。</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="resetDemo">重置取件状态</button>
+          </div>
+
+          <div class="pickup-toolbar">
+            <button class="btn btn-primary btn-sm" :disabled="!speechSupported" @click="toggleVoice" :aria-pressed="voiceEnabled && voiceReady">{{ voiceLabel }}</button>
+            <button class="btn btn-ghost btn-sm" :disabled="!speechSupported" @click="testVoice">试听播报</button>
+            <span class="voice-hint">{{ !speechSupported ? '请使用支持语音的浏览器' : voiceEnabled && !voiceReady ? '首次使用请点击开启，让每次取件都有语音提醒' : '刷卡后自动播报姓氏和待取数量' }}</span>
+          </div>
+          <div v-if="voiceNotice" class="voice-notice" role="status">{{ voiceNotice }}</div>
+          <div class="card pickup-screen" :class="cardScreenClass" aria-live="polite" aria-atomic="true">
+            <div class="screen-topline"><span>校园智慧取件</span><span>便捷 · 有序 · 安心</span></div>
+            <template v-if="!lastCard">
+              <svg class="scan-symbol" viewBox="0 0 64 64" fill="none" aria-hidden="true"><rect x="15" y="10" width="34" height="44" rx="6" stroke="currentColor" stroke-width="3"/><path d="M23 22h18M23 30h10M7 25v14M57 25v14M27 44h10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+              <div class="big">请刷校园卡</div>
+              <div class="hint">将校园卡靠近读卡器，取件信息即刻呈现</div>
+              <div class="idle-footnote">01 刷卡查件　 /　 02 按码取件　 /　 03 再刷确认</div>
+            </template>
+
+            <template v-else-if="lastCard.kind === 'show'">
+              <div class="who">
+                <span class="name">{{ lastCard.student.name }}</span>
+                <span class="phone">手机尾号 {{ (lastCard.student.phone || '').slice(-4) }}</span>
+              </div>
+              <div class="pickup-summary">
+                <template v-if="lastCard.packages.length">
+                  你有 <b>{{ lastCard.packages.length }}</b> 个待取件
+                </template>
+                <template v-else>
+                  已无待取件，祝你今天愉快
+                </template>
+              </div>
+              <div class="codes">
+                <div class="code" v-for="p in lastCard.packages" :key="p.id">{{ p.pickup_code }}</div>
+              </div>
+              <div v-if="lastCard.packages.length" class="cooldown">
+                <div><strong>01</strong> 请先移开校园卡，按上方取件码领取快递</div>
+                <div><strong>02</strong> 领取后再次刷卡，完成取件确认</div>
+                <div>确认时间剩余 {{ cooldownText }}</div>
+                <div class="progress"><div :style="{width: cooldownPct + '%'}"></div></div>
+              </div>
+              <div class="epc">EPC: {{ lastCard.epc }}</div>
+            </template>
+
+            <template v-else-if="lastCard.kind === 'checkout'">
+              <div class="big">取件成功</div>
+              <div class="who" style="margin-top: 8px;">
+                <span class="name">{{ lastCard.student.name }}</span>，已领取 {{ lastCard.picked_count }} 件
+              </div>
+            </template>
+
+            <template v-else-if="lastCard.kind === 'unknown_card'">
+              <div class="big">欢迎，新同学</div>
+              <div class="hint">这张卡还没有绑定，填写个人信息即可开通</div>
+              <div class="epc">EPC: {{ lastCard.epc }}</div>
+            </template>
+
+            <template v-else-if="lastCard.kind === 'bind_success'">
+              <div class="big">校园卡绑定成功</div>
+              <div class="who" style="margin-top: 8px;">
+                EPC <span class="name" style="font-size: 16px; font-family: monospace;">{{ lastCard.epc.slice(0, 12) }}…</span>
+                已绑定到 <span class="name">{{ lastCard.student.name }}</span>
+              </div>
+            </template>
+          </div>
+
+          <div class="service-strip"><span>刷卡识别 · 自动查件</span><span class="separator">/</span><span>取件码实时显示</span><span class="separator">/</span><span>取完后请再次刷卡</span></div>
+          <!-- 新卡绑定面板：读到未注册卡时自动出现 -->
+          <div v-if="lastCard && lastCard.kind === 'unknown_card'" class="card bind-panel">
+            <div class="bind-head">
+              <div>
+                <h3 style="margin: 0;">绑定这张新卡</h3>
+                <div class="sub">EPC <code>{{ lastCard.epc }}</code></div>
+              </div>
+              <button class="btn btn-ghost btn-sm" @click="ignoreUnknown">先不绑</button>
+            </div>
+
+            <div class="form-row" style="margin-top: 14px;">
+              <div class="field">
+                <label>手机号 *</label>
+                <input v-model="bindForm.phone" placeholder="11 位手机号" @keyup.enter="submitBind" />
+              </div>
+              <div class="field">
+                <label>姓名 *</label>
+                <input id="bind-name" v-model="bindForm.name" placeholder="新同学填姓名；已登记的填手机号即可" @keyup.enter="submitBind" />
+              </div>
+              <div class="field">
+                <label>学号</label>
+                <input v-model="bindForm.student_no" placeholder="选填" @keyup.enter="submitBind" />
+              </div>
+            </div>
+
+            <div class="form-row" style="margin-bottom: 8px;">
+              <div class="field">
+                <label>或直接绑定到已有同学（选了这个就忽略上面表单）</label>
+                <select v-model="bindForm.student_id">
+                  <option value="">— 新建 / 按手机号匹配 —</option>
+                  <option v-for="s in students" :key="s.id" :value="s.id">{{ s.name }} · {{ s.phone }}</option>
+                </select>
+              </div>
+              <button class="btn btn-primary" :disabled="bindBusy" @click="submitBind">
+                {{ bindBusy ? '绑定中…' : '绑定并显示快递' }}
+              </button>
+            </div>
+
+            <div v-if="bindMsg" :style="{color: bindMsg.ok ? '#16a34a' : '#ef4444', fontSize: '13px'}">{{ bindMsg.text }}</div>
+            <div class="sub" style="margin-top: 8px;">绑定成功后，若这位同学有待取快递，会立刻显示取件码。</div>
+          </div>
+        </section>
+
+        <!-- 快递录入 -->
+        <section v-show="tab==='inbound'">
+          <div class="topbar">
+            <div>
+              <h1>快递录入</h1>
+              <div class="sub">按手机号自动匹配学生，不用选名字</div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom: 18px;">
+            <div class="form-row">
+              <div class="field">
+                <label>取件码（必填）</label>
+                <input v-model="newPkg.pickup_code" placeholder="如 A-12-3456" autofocus />
+              </div>
+              <div class="field">
+                <label>手机号（必填）</label>
+                <input v-model="newPkg.phone" placeholder="11位手机号" @keyup.enter="submitPkg(false)" />
+              </div>
+              <div class="field">
+                <label>快递单号（可选）</label>
+                <input v-model="newPkg.tracking_no" placeholder="SF / JD / YT..." @keyup.enter="submitPkg(false)" />
+              </div>
+              <button class="btn btn-primary" @click="submitPkg(false)">录入</button>
+            </div>
+            <div v-if="pkgMsg" :style="{color: pkgMsg.ok ? '#16a34a' : '#ef4444', fontSize: '13px'}">{{ pkgMsg.text }}</div>
+            <div v-if="pkgNeedCreate" style="margin-top: 10px; padding: 10px 14px; border-radius: 10px; background: #fff7ed; color: #b45309; font-size: 13px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+              <span>手机号 {{ pkgNeedCreate }} 还没登记过。</span>
+              <button class="btn btn-primary btn-sm" @click="submitPkg(true)">用这个手机号新建收件人并录入</button>
+              <span style="color: var(--ink-2);">（或先去「学生管理」补上姓名）</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="margin: 0;">最近快递（待取优先）</h3>
+              <div style="display: flex; gap: 8px;">
+                <select v-model="pkgFilter" style="padding:6px 10px; border-radius: 8px; border:1px solid var(--line);">
+                  <option value="">全部</option>
+                  <option value="pending">待取</option>
+                  <option value="picked">已取</option>
+                </select>
+                <button class="btn btn-ghost btn-sm" @click="loadPkgs">刷新</button>
+              </div>
+            </div>
+            <table v-if="packages.length">
+              <thead>
+                <tr>
+                  <th>取件码</th><th>单号</th><th>学生</th><th>手机</th><th>状态</th><th>到站</th><th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="p in packages" :key="p.id">
+                  <td><b>{{ p.pickup_code }}</b></td>
+                  <td style="color: var(--ink-2);">{{ p.tracking_no || '—' }}</td>
+                  <td>{{ p.student_name }}</td>
+                  <td style="font-family: monospace;">{{ p.student_phone }}</td>
+                  <td><span class="badge" :class="p.status">{{ p.status === 'pending' ? '待取' : '已取' }}</span></td>
+                  <td style="color: var(--ink-2); font-size: 12px;">{{ formatTime(p.arrived_at) }}</td>
+                  <td>
+                    <button v-if="p.status==='pending'" class="btn btn-ghost btn-sm" @click="pickOne(p)">标已取</button>
+                    <button v-else class="btn btn-ghost btn-sm" @click="restoreOne(p)">恢复</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="empty">暂无快递</div>
+          </div>
+        </section>
+
+        <!-- 数据导入 -->
+        <section v-show="tab==='import'">
+          <div class="topbar">
+            <div>
+              <h1>数据导入</h1>
+              <div class="sub">上传 Excel / CSV，批量导入学生名单和快递信息</div>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <a class="btn btn-ghost btn-sm" :href="API + '/api/import/template?kind=students'" target="_blank">学生模板</a>
+              <a class="btn btn-ghost btn-sm" :href="API + '/api/import/template?kind=packages'" target="_blank">快递模板</a>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom: 18px;">
+            <div class="form-row">
+              <div class="field" style="max-width: 240px;">
+                <label>导入类型</label>
+                <select v-model="imp.kind">
+                  <option value="auto">自动识别</option>
+                  <option value="students">学生名单</option>
+                  <option value="packages">快递信息</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="dropzone"
+                 :class="{drag: imp.dragging}"
+                 @dragover.prevent="imp.dragging = true"
+                 @dragleave.prevent="imp.dragging = false"
+                 @drop.prevent="onDrop">
+              <div style="font-size: 34px; margin-bottom: 8px;">📄</div>
+              <div style="font-weight: 600;">把 .xlsx / .csv 文件拖到这里</div>
+              <div class="sub" style="margin: 6px 0 12px;">或</div>
+              <label class="btn btn-primary" style="display: inline-block;">
+                选择文件
+                <input type="file" accept=".xlsx,.xlsm,.csv,.txt" style="display:none" @change="onPickFile" />
+              </label>
+              <div class="sub" style="margin-top: 10px;" v-if="imp.filename">当前文件：{{ imp.filename }}</div>
+              <div class="sub" style="margin-top: 10px; color: var(--brand);" v-if="imp.busy">解析中…</div>
+            </div>
+
+            <div v-if="impMsg" :style="{color: impMsg.ok ? '#16a34a' : '#ef4444', fontSize: '13px', marginTop: '12px'}">
+              {{ impMsg.text }}
+            </div>
+          </div>
+
+          <!-- 预览 -->
+          <div class="card" style="margin-bottom: 18px;" v-if="imp.preview">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="margin: 0;">
+                预览 · {{ kindLabel }} · 共 {{ imp.preview.total }} 行，有效 {{ imp.preview.valid }} 行
+              </h3>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-ghost btn-sm" @click="resetImport">取消</button>
+                <button class="btn btn-primary btn-sm" :disabled="imp.busy" @click="commitImport">
+                  确认导入 {{ imp.preview.valid }} 行
+                </button>
+              </div>
+            </div>
+
+            <div class="sub" style="margin-bottom: 10px;">
+              识别到的列：
+              <span v-for="(col, f) in imp.preview.mapping" :key="f" class="badge pending" style="margin-right: 6px;">
+                {{ colLabel(f) }} ← 第 {{ col + 1 }} 列
+              </span>
+            </div>
+
+            <table v-if="imp.preview.preview.length">
+              <thead>
+                <tr><th v-for="c in previewCols" :key="c">{{ colLabel(c) }}</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, i) in imp.preview.preview" :key="i">
+                  <td v-for="c in previewCols" :key="c">{{ row[c] || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div v-if="imp.preview.errors.length" style="margin-top: 14px;">
+              <div style="font-weight: 600; color: #b45309; margin-bottom: 6px;">
+                有 {{ imp.preview.invalid }} 行需要修正（导入时会跳过）
+              </div>
+              <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2);">
+                <li v-for="(e, i) in imp.preview.errors" :key="i">
+                  第 {{ e.line }} 行：{{ e.errors.join('、') }}
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- 结果 -->
+          <div class="card" v-if="imp.summary">
+            <h3 style="margin: 0 0 12px;">导入结果</h3>
+            <div class="grid-4">
+              <div class="stat" style="padding: 0;">
+                <div class="label">新增学生</div><div class="value" style="font-size: 24px;">{{ imp.summary.created_students }}</div>
+              </div>
+              <div class="stat" style="padding: 0;">
+                <div class="label">更新学生</div><div class="value" style="font-size: 24px;">{{ imp.summary.updated_students }}</div>
+              </div>
+              <div class="stat" style="padding: 0;">
+                <div class="label">新增快递</div><div class="value" style="font-size: 24px; color: var(--brand);">{{ imp.summary.created_packages }}</div>
+              </div>
+              <div class="stat" style="padding: 0;">
+                <div class="label">跳过</div><div class="value" style="font-size: 24px; color: var(--warn);">{{ imp.summary.skipped }}</div>
+              </div>
+            </div>
+            <div v-if="imp.summary.errors.length" style="margin-top: 12px;">
+              <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink-2);">
+                <li v-for="(e, i) in imp.summary.errors.slice(0, 20)" :key="i">第 {{ e.line }} 行：{{ e.reason }}</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- 说明 -->
+          <div class="card">
+            <h3 style="margin: 0 0 10px;">表格字段说明</h3>
+            <table>
+              <thead><tr><th>用途</th><th>必需列</th><th>可选列</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr>
+                  <td><b>学生名单</b></td><td>姓名、手机号</td><td>学号、卡号EPC</td>
+                  <td>手机号已存在则更新资料；填了 EPC 会直接把卡绑定到该同学</td>
+                </tr>
+                <tr>
+                  <td><b>快递信息</b></td><td>手机号、取件码</td><td>运单号、货架、姓名</td>
+                  <td>按手机号自动挂到学生名下；手机号不存在会自动建档</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="sub" style="margin-top: 10px;">
+              列名支持常见写法（手机号 / 电话 / phone、取件码 / 取件号 / code 等），识别不出来时请按模板调整表头。
+            </div>
+          </div>
+        </section>
+
+        <!-- 学生管理 -->
+        <section v-show="tab==='students'">
+          <div class="topbar">
+            <div>
+              <h1>学生管理</h1>
+              <div class="sub">录入学生后，可把 RFID 卡 EPC 绑定到学生</div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom: 18px;">
+            <div class="form-row">
+              <div class="field">
+                <label>学号</label>
+                <input v-model="newStu.student_no" placeholder="选填" />
+              </div>
+              <div class="field">
+                <label>姓名 *</label>
+                <input v-model="newStu.name" placeholder="必填" />
+              </div>
+              <div class="field">
+                <label>手机号 *</label>
+                <input v-model="newStu.phone" placeholder="必填，11位" @keyup.enter="submitStu" />
+              </div>
+              <div class="field">
+                <label>RFID EPC（可选）</label>
+                <input v-model="newStu.rfid_epc" placeholder="刷卡后会自动填入" />
+              </div>
+              <button class="btn btn-primary" @click="submitStu">添加</button>
+            </div>
+            <div v-if="stuMsg" :style="{color: stuMsg.ok ? '#16a34a' : '#ef4444', fontSize: '13px'}">{{ stuMsg.text }}</div>
+          </div>
+
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="margin: 0;">学生列表（{{ students.length }}）</h3>
+              <input v-model="stuQ" @input="loadStudents" placeholder="搜索 姓名/手机/学号" style="padding:6px 10px; border-radius: 8px; border:1px solid var(--line); width: 220px;" />
+            </div>
+            <table v-if="students.length">
+              <thead>
+                <tr><th>ID</th><th>学号</th><th>姓名</th><th>手机</th><th>RFID EPC</th><th>待取</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="s in students" :key="s.id">
+                  <td>{{ s.id }}</td>
+                  <td>{{ s.student_no || '—' }}</td>
+                  <td><b>{{ s.name }}</b></td>
+                  <td style="font-family: monospace;">{{ s.phone }}</td>
+                  <td style="font-family: monospace; font-size: 12px; color: var(--ink-2);">{{ s.rfid_epc || '未绑定' }}</td>
+                  <td><span class="badge pending">{{ pendingByStudent[s.id] || 0 }}</span></td>
+                  <td>
+                    <button v-if="awaitingBindId !== s.id" class="btn btn-ghost btn-sm" @click="startAwaitBind(s)">等待刷卡</button>
+                    <button v-else class="btn btn-primary btn-sm" @click="cancelAwaitBind(s)">取消</button>
+                    <button class="btn btn-ghost btn-sm" @click="bindCard(s)" style="margin-left: 4px;">手动输入</button>
+                    <button v-if="unknownEpc" class="btn btn-primary btn-sm" @click="bindUnknownTo(s)" style="margin-left: 4px;">绑新卡</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="empty">还没有学生</div>
+          </div>
+        </section>
+
+        <!-- 仪表板 -->
+        <section v-show="tab==='dashboard'">
+          <div class="topbar">
+            <div>
+              <h1>统计</h1>
+              <div class="sub">实时数据</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" @click="loadStats">刷新</button>
+          </div>
+          <div class="grid-4" style="margin-bottom: 18px;">
+            <div class="card stat"><div class="label">注册学生</div><div class="value">{{ stats.total_students }}</div></div>
+            <div class="card stat"><div class="label">当前待取</div><div class="value" style="color: var(--pending)">{{ stats.pending }}</div></div>
+            <div class="card stat"><div class="label">今日到站</div><div class="value" style="color: var(--brand)">{{ stats.today_arrived }}</div></div>
+            <div class="card stat"><div class="label">今日已取</div><div class="value" style="color: var(--picked)">{{ stats.today_picked }}</div></div>
+          </div>
+
+          <div class="card">
+            <h3 style="margin: 0 0 12px;">最近刷卡事件</h3>
+            <table v-if="cardEvents.length">
+              <thead><tr><th>时间</th><th>EPC</th><th>学生</th><th>事件</th><th>详情</th></tr></thead>
+              <tbody>
+                <tr v-for="e in cardEvents" :key="e.id">
+                  <td style="font-family: monospace; font-size: 12px; color: var(--ink-2);">{{ formatTime(e.created_at) }}</td>
+                  <td style="font-family: monospace; font-size: 12px;">{{ shortEpc(e.epc) }}</td>
+                  <td>{{ e.student_name || '—' }}</td>
+                  <td>
+                    <span class="badge" :class="eventClass(e.event)">{{ eventText(e.event) }}</span>
+                  </td>
+                  <td style="color: var(--ink-2); font-size: 12px;">{{ e.detail || '' }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="empty">暂无刷卡事件</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div v-if="flash" class="flash" :class="{error: flashError}" role="status" aria-live="polite">{{ flashError ? '提示：' : '✓ ' }}{{ flash }}</div>
+  </div>
+
+  <!-- Vue 3 运行库：优先用同目录下的本地文件（离线可用），缺失时自动回退 CDN -->
+  <script src="./vue.global.prod.js"></script>
+  <script>
+    if (typeof Vue === 'undefined') {
+      document.write('<script src="https://unpkg.com/vue@3.4.27/dist/vue.global.prod.js"><\/script>')
+    }
+  </script>
+  <script src="./app.js"></script>
+</body>
+</html>
